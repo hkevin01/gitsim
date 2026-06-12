@@ -33,6 +33,9 @@
 - [Types of Merging](#types-of-merging)
 - [The PullRequest Object](#the-pullrequest-object)
 - [Corporate Branching Strategy](#corporate-branching-strategy)
+- [Branch Tree in Three Dimensions](#branch-tree-in-three-dimensions)
+- [Deployment Environments](#deployment-environments)
+- [Developer Sprint Workflow - Step by Step](#developer-sprint-workflow---step-by-step)
 - [Module Reference](#module-reference)
 - [Data Structures](#data-structures)
 - [State Machine Flow](#state-machine-flow)
@@ -276,6 +279,392 @@ In a real corporate repository, the branch hierarchy is enforced by branch prote
 
 ---
 
+## Branch Tree in Three Dimensions
+
+A flat diagram shows branches as lines but does not convey that they exist simultaneously in three distinct layers: **local** (your laptop), **remote** (origin on GitHub/GitLab), and **deployed** (what is running in each environment). This section shows the full picture.
+
+### The Three Layers Every Branch Lives In
+
+```mermaid
+flowchart TB
+    subgraph LOCAL ["💻 Layer 1 — Your Local Machine"]
+        direction LR
+        LM["main"] ~~~ LD["develop"] ~~~ LF["feature/PROJ-142"] ~~~ LH["hotfix/PROJ-175"]
+    end
+
+    subgraph REMOTE ["☁️ Layer 2 — origin (GitHub / GitLab)"]
+        direction LR
+        RM["origin/main"] ~~~ RD["origin/develop"] ~~~ RF["origin/feature/PROJ-142"] ~~~ RR["origin/release/1.1.0"]
+    end
+
+    subgraph DEPLOYED ["🚀 Layer 3 — Deployed Environments"]
+        direction LR
+        ENV_DEV["🔵 dev\n(origin/develop)"] ~~~ ENV_QA["🟡 qa / staging\n(origin/release/1.1.0)"] ~~~ ENV_PROD["🟢 production\n(origin/main @ tag v1.1.0)"]
+    end
+
+    LOCAL -- "git push" --> REMOTE
+    REMOTE -- "git fetch" --> LOCAL
+    REMOTE -- "CI/CD pipeline deploys on merge" --> DEPLOYED
+```
+
+> [!NOTE]
+> Your local branches and `origin/*` remote-tracking refs are **two separate things**. When you run `git fetch`, Git updates `origin/develop` on your machine to match what is on GitHub — but your local `develop` branch does not move. You must `git rebase origin/develop` (or `git merge origin/develop`) to actually incorporate those changes into your local branch. This is why `git pull` = `git fetch` + `git merge`.
+
+### The Full Branch Tree — All Tiers Simultaneously
+
+This is what the repository looks like to a team lead watching `git log --all --graph` on a busy sprint day. All branches exist at the same time. Each developer is on their own feature branch. The `develop` branch is the integration point. The `release` branch is frozen for QA.
+
+```mermaid
+flowchart LR
+    subgraph PROD ["🟢 PRODUCTION"]
+        MAIN["main\nv1.0.0 ● v1.1.0 ●"]
+    end
+
+    subgraph RELEASE ["🟡 HARDENING"]
+        REL["release/1.1.0"]
+        RELFIX["bugfix/PROJ-171\nheader-case"]
+    end
+
+    subgraph INTEGRATION ["🔵 INTEGRATION"]
+        DEV["develop"]
+    end
+
+    subgraph FEATURES ["🟣 ACTIVE WORK"]
+        direction TB
+        F1["feature/PROJ-142\nuser-auth\n👤 Alice"]
+        F2["feature/PROJ-157\npassword-reset\n👤 Bob"]
+        F3["feature/PROJ-188\nnew-dashboard\n👤 Carol"]
+        B1["bugfix/PROJ-163\nrace-condition\n👤 Dave"]
+        T1["test/sprint-22-auth\n👤 QA Team"]
+    end
+
+    subgraph EMERGENCY ["🔴 HOTFIX"]
+        HOT["hotfix/PROJ-175\nnull-crash\n👤 Alice"]
+    end
+
+    F1 & F2 & F3 & B1 & T1 -- "PR → squash merge" --> DEV
+    DEV -- "sprint complete → cut" --> REL
+    RELFIX -- "PR → merge" --> REL
+    REL -- "sign-off → merge" --> MAIN
+    REL -- "back-merge" --> DEV
+    MAIN -- "cut for emergency" --> HOT
+    HOT -- "PR → merge" --> MAIN
+    HOT -- "back-merge" --> DEV
+
+    style MAIN fill:#0d3b1e,stroke:#2ea043,color:#fff
+    style DEV fill:#1a2a3a,stroke:#4a9eff,color:#fff
+    style REL fill:#3a2a0a,stroke:#f0a030,color:#fff
+    style HOT fill:#3a0a0a,stroke:#ff4a4a,color:#fff
+    style F1 fill:#1a1a3a,stroke:#8a4aff,color:#fff
+    style F2 fill:#1a1a3a,stroke:#8a4aff,color:#fff
+    style F3 fill:#1a1a3a,stroke:#8a4aff,color:#fff
+    style B1 fill:#1a2a1a,stroke:#4aff8a,color:#fff
+    style T1 fill:#2a1a2a,stroke:#ff4aaa,color:#fff
+    style RELFIX fill:#2a2a0a,stroke:#f0c030,color:#fff
+```
+
+---
+
+## Deployment Environments
+
+Every branch tier maps to a specific deployment environment. Code does not jump straight from a developer's laptop to production — it flows through a pipeline of environments, each with a different stability requirement and audience. Understanding this pipeline explains why the branch hierarchy exists: each branch tier is the source of truth for one environment.
+
+```mermaid
+flowchart LR
+    subgraph DEV_ENV ["🔵 Development Environment"]
+        direction TB
+        DA["Auto-deployed on every\nmerge to develop"]
+        DB["Used by: developers\nfor integration testing"]
+        DC["Stability bar: CI green\n(unit tests pass)"]
+        DD["URL: dev.internal.company.com"]
+    end
+
+    subgraph QA_ENV ["🟡 QA / Staging Environment"]
+        direction TB
+        QA["Auto-deployed when\nrelease branch is cut"]
+        QB["Used by: QA engineers\nfor acceptance testing"]
+        QC["Stability bar: full regression\nsuite must pass"]
+        QD["URL: staging.company.com"]
+    end
+
+    subgraph UAT_ENV ["🟠 UAT Environment"]
+        direction TB
+        UA["Deployed from release\nbranch on QA sign-off"]
+        UB["Used by: product owner,\nbusiness stakeholders"]
+        UC["Stability bar: business\nacceptance criteria met"]
+        UD["URL: uat.company.com"]
+    end
+
+    subgraph PROD_ENV ["🟢 Production"]
+        direction TB
+        PA["Deployed on merge\nof release to main"]
+        PB["Used by: real users"]
+        PC["Stability bar: all gates\npassed + signed off"]
+        PD["URL: company.com"]
+    end
+
+    BRANCH_DEV["origin/develop"] --> DEV_ENV
+    BRANCH_REL["origin/release/x.y.z"] --> QA_ENV
+    BRANCH_REL --> UAT_ENV
+    BRANCH_MAIN["origin/main @ tag"] --> PROD_ENV
+
+    DEV_ENV -- "QA promoted\nsprint complete" --> QA_ENV
+    QA_ENV -- "QA signed off" --> UAT_ENV
+    UAT_ENV -- "PO + security\nsigned off" --> PROD_ENV
+
+    style PROD_ENV fill:#0d3b1e,stroke:#2ea043,color:#fff
+    style QA_ENV fill:#3a2a0a,stroke:#f0a030,color:#fff
+    style UAT_ENV fill:#3a1a0a,stroke:#ff8a00,color:#fff
+    style DEV_ENV fill:#1a2a3a,stroke:#4a9eff,color:#fff
+```
+
+| # | Environment | Source Branch | Deployed By | Who Uses It | Stability Bar |
+|---|-------------|--------------|-------------|------------|---------------|
+| <sub>1</sub> | <sub>**Local** (your machine)</sub> | <sub>`feature/*` branch</sub> | <sub>You — `python run.py` or `npm start`</sub> | <sub>Developer only</sub> | <sub>"It works on my machine"</sub> |
+| <sub>2</sub> | <sub>**Dev / Integration**</sub> | <sub>`develop`</sub> | <sub>CI/CD on every merge to develop</sub> | <sub>Developers, for integration sanity checks</sub> | <sub>Unit tests pass, no merge conflicts</sub> |
+| <sub>3</sub> | <sub>**QA / Staging**</sub> | <sub>`release/x.y.z`</sub> | <sub>CI/CD when release branch is created</sub> | <sub>QA engineers running acceptance tests</sub> | <sub>Full regression suite green</sub> |
+| <sub>4</sub> | <sub>**UAT**</sub> | <sub>`release/x.y.z`</sub> | <sub>Manual trigger after QA sign-off</sub> | <sub>Product owner, business stakeholders</sub> | <sub>Acceptance criteria met</sub> |
+| <sub>5</sub> | <sub>**Production**</sub> | <sub>`main` @ version tag</sub> | <sub>CI/CD on merge to main</sub> | <sub>Real end users</sub> | <sub>All environments signed off</sub> |
+| <sub>6</sub> | <sub>**Hotfix staging**</sub> | <sub>`hotfix/*`</sub> | <sub>Manual or automated on hotfix push</sub> | <sub>Developer + senior reviewer only</sub> | <sub>Bug fixed, no regressions on critical paths</sub> |
+
+> [!IMPORTANT]
+> Code only moves **forward** through the environment pipeline — local → dev → QA → UAT → production. It never skips an environment. A developer who deploys untested code directly to production bypasses every safety check the pipeline provides. The branch protection and environment promotion rules exist precisely to prevent this.
+
+---
+
+## Developer Sprint Workflow - Step by Step
+
+This section answers the most common question a developer asks when joining a team: **"I just got assigned a ticket - what exactly do I do, in what order, and why?"** It covers the full lifecycle from sprint planning through code review, testing, documentation, and final merge to production. Every step is shown as the exact command you would type, the branch it happens on, and who is responsible for it.
+
+Understanding this workflow end to end - not just the Git commands, but the social and quality-control contract that surrounds them - is what separates a developer who ships safely from one who breaks the build.
+
+> [!NOTE]
+> GitSim Scenario 5 (`python run.py --scenario 5`) simulates the Git operations in this workflow. The sections below describe the human process that drives those Git operations - who decides what, when documentation is written, when tests are written, and what the reviewer is actually checking.
+
+---
+
+### Sprint Start - What Happens Before You Write a Single Line
+
+Before any developer writes any code, the team goes through sprint planning. In sprint planning, the product owner presents the highest-priority items from the backlog, the team estimates effort, and tasks are assigned. Every task becomes a ticket in the project management system (JIRA, Linear, GitHub Issues, Azure DevOps). Each ticket has an ID, a description, acceptance criteria, and an assignee.
+
+As a developer, you receive a ticket number and a description. **Do not start writing code until you fully understand the acceptance criteria.** If the acceptance criteria are vague, ask now - not after you have spent two days building the wrong thing. This is the cheapest moment to clarify scope.
+
+> [!TIP]
+> Read the ticket, read the linked design document or Figma spec, and read the test cases written by QA (if your team does spec-driven development). Then look at the code area you will be touching. Pull down the latest `develop` branch and read the relevant files before creating your branch. Twenty minutes of reading saves hours of rework.
+
+---
+
+### The Complete Developer Task Lifecycle
+
+```mermaid
+flowchart TD
+    A(["🗓️ Sprint Planning\nTicket assigned to developer"]) --> B
+    B(["📖 Read ticket + acceptance criteria\nAsk questions NOW if unclear"]) --> C
+    C(["⬇️ Pull latest develop\ngit checkout develop\ngit pull origin develop"]) --> D
+    D(["🌿 Create feature branch\ngit checkout -b feature/PROJ-123-description"]) --> E
+    E(["💻 Write code\nSmall focused commits\ngit add -p + git commit"]) --> F
+    F(["🧪 Write / update tests\nUnit tests alongside the code\nNot after - alongside"]) --> G
+    G(["📋 Self-review\ngit diff develop..HEAD\nRead every line you changed"]) --> H
+    H(["🔄 Sync with develop\ngit fetch + git rebase origin/develop"]) --> I
+    I(["🚀 Push branch\ngit push -u origin feature/PROJ-123"]) --> J
+    J(["📬 Open Pull Request\nTitle + description + screenshots\nLink the ticket"]) --> K
+    K(["👥 Peer Code Review\nAt least 1 approval required"]) --> L{"Changes\nrequested?"}
+    L -->|"Yes"| M(["🔧 Address feedback\nnew commits + push\nReply to each comment"])
+    M --> K
+    L -->|"No - Approved"| N(["✅ CI passes\nAll tests green"])
+    N --> O(["🔀 Merge to develop\nSquash merge via PR"])
+    O --> P(["🗑️ Delete feature branch\nautomatically or manually"])
+    P --> Q(["📝 Update documentation\nif public API or behaviour changed"])
+    Q --> R(["📦 Release branch cut\nwhen sprint complete"])
+    R --> S(["🧪 QA full regression\non release branch"])
+    S --> T(["🚢 Merge release to main\nProduction deploy"])
+    style A fill:#1a2a3a,stroke:#4a9eff,color:#fff
+    style D fill:#1a3a1a,stroke:#2ea043,color:#fff
+    style J fill:#2a1a3a,stroke:#9a4aff,color:#fff
+    style K fill:#3a2a1a,stroke:#f0a030,color:#fff
+    style T fill:#0d3b1e,stroke:#2ea043,color:#fff
+```
+
+---
+
+### Step-by-Step Command Reference
+
+The table below is the definitive checklist. Each row is one discrete action, the exact command to run, the branch it happens on, and who is responsible. Print this and keep it next to your keyboard until the workflow is muscle memory.
+
+| # | Phase | Action | Exact Command | Branch | Who |
+|---|-------|--------|--------------|--------|-----|
+| <sub>1</sub> | <sub>**Sprint start**</sub> | <sub>Read the ticket, acceptance criteria, and any linked design docs. Ask questions before writing code.</sub> | <sub>*(no command - human step)*</sub> | <sub>n/a</sub> | <sub>Developer</sub> |
+| <sub>2</sub> | <sub>**Sprint start**</sub> | <sub>Switch to develop and pull the absolute latest code from origin. Never branch from a stale local develop.</sub> | <sub>`git checkout develop`<br>`git pull origin develop`</sub> | <sub>`develop`</sub> | <sub>Developer</sub> |
+| <sub>3</sub> | <sub>**Sprint start**</sub> | <sub>Create your feature branch from the freshly pulled develop. Use the ticket ID in the branch name.</sub> | <sub>`git checkout -b feature/PROJ-123-short-description`</sub> | <sub>new `feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>4</sub> | <sub>**Development**</sub> | <sub>Write code. Make small, frequent, focused commits. Each commit should do one thing.</sub> | <sub>`git add -p`<br>`git commit -m "feat(scope): PROJ-123 what and why"`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>5</sub> | <sub>**Development**</sub> | <sub>Write or update unit tests alongside the code - not after. If you write tests after the code is done you will rationalise rather than verify.</sub> | <sub>`git add tests/`<br>`git commit -m "test(scope): PROJ-123 add unit tests"`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>6</sub> | <sub>**Development**</sub> | <sub>Run all tests locally before pushing. Never push a branch with known failing tests.</sub> | <sub>`python -m pytest` or team test command</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>7</sub> | <sub>**Before PR**</sub> | <sub>Self-review your entire diff. Read every line you changed as if you are the reviewer. This is the single highest-ROI habit in software development.</sub> | <sub>`git diff develop..HEAD`<br>or open the diff in your IDE</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>8</sub> | <sub>**Before PR**</sub> | <sub>Fetch the latest develop and rebase your branch onto it. This ensures your PR is based on current code and the eventual merge will be clean.</sub> | <sub>`git fetch origin`<br>`git rebase origin/develop`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>9</sub> | <sub>**Before PR**</sub> | <sub>Resolve any rebase conflicts, run tests again to confirm the resolved state is still correct.</sub> | <sub>*(edit conflicted files)*<br>`git add <file>`<br>`git rebase --continue`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>10</sub> | <sub>**Before PR**</sub> | <sub>Push your branch to origin. Use `-u` the first time to set the upstream tracking reference.</sub> | <sub>`git push -u origin feature/PROJ-123-short-description`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>11</sub> | <sub>**PR open**</sub> | <sub>Open the pull request. Write a description that explains WHAT changed, WHY it changed, how to test it, and any screenshots for UI changes. Link the ticket.</sub> | <sub>*(GitHub/GitLab web UI)*<br>Source: `feature/PROJ-123-*`<br>Target: `develop`</sub> | <sub>PR: `feature` → `develop`</sub> | <sub>Developer</sub> |
+| <sub>12</sub> | <sub>**PR open**</sub> | <sub>Assign at least one reviewer. For security-sensitive or complex changes, assign two. Tag QA if acceptance testing is needed on the PR.</sub> | <sub>*(GitHub/GitLab web UI)*</sub> | <sub>PR</sub> | <sub>Developer</sub> |
+| <sub>13</sub> | <sub>**Code review**</sub> | <sub>Reviewer reads the ticket, reads the diff, checks logic, security, test coverage, naming, and style. Leaves specific actionable comments on individual lines.</sub> | <sub>*(GitHub/GitLab review UI)*</sub> | <sub>PR</sub> | <sub>Reviewer (peer developer)</sub> |
+| <sub>14</sub> | <sub>**Code review**</sub> | <sub>Address every comment. For each comment, either fix it (new commit + push) or reply explaining why you disagree and discuss until resolved. Do not just click "resolve".</sub> | <sub>`git add -p`<br>`git commit -m "fix: address review feedback"`<br>`git push`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>15</sub> | <sub>**Code review**</sub> | <sub>Reviewer re-reviews after changes and approves. On GitHub, clicking Approve sets the PR to mergeable (subject to branch protection rules).</sub> | <sub>*(GitHub/GitLab review UI)*</sub> | <sub>PR</sub> | <sub>Reviewer</sub> |
+| <sub>16</sub> | <sub>**Testing**</sub> | <sub>CI runs automatically on every push (unit tests, linting, security scan). All checks must be green before merge is allowed. Fix any CI failures before asking for re-review.</sub> | <sub>*(automated - watch CI status)*</sub> | <sub>PR</sub> | <sub>CI system + Developer (to fix failures)</sub> |
+| <sub>17</sub> | <sub>**Testing**</sub> | <sub>QA engineer (if applicable) picks up the PR or deploys the branch to a QA environment and runs manual acceptance tests against the ticket's acceptance criteria.</sub> | <sub>*(QA environment deploy)*</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>QA Engineer</sub> |
+| <sub>18</sub> | <sub>**Documentation**</sub> | <sub>If the change adds, modifies, or removes a public API, a configuration option, or user-facing behaviour: update the documentation NOW, as part of this PR, before it merges. Never leave documentation for later.</sub> | <sub>`git add docs/`<br>`git commit -m "docs: PROJ-123 update API reference"`</sub> | <sub>`feature/PROJ-123-*`</sub> | <sub>Developer</sub> |
+| <sub>19</sub> | <sub>**Merge**</sub> | <sub>All conditions met: approved, CI green, QA sign-off, docs updated. Squash and merge into develop. The PR is now closed and the work is in develop.</sub> | <sub>*(GitHub/GitLab "Squash and merge" button)*</sub> | <sub>PR → `develop`</sub> | <sub>Developer (or team lead)</sub> |
+| <sub>20</sub> | <sub>**Merge**</sub> | <sub>Delete the feature branch. It has served its purpose. Keeping it creates clutter and false signals about active work.</sub> | <sub>`git push origin --delete feature/PROJ-123-*`<br>or auto-deleted by GitHub setting</sub> | <sub>origin</sub> | <sub>Developer (or automation)</sub> |
+| <sub>21</sub> | <sub>**Release**</sub> | <sub>When the sprint is complete and develop is stable, a release branch is cut by the team lead or release manager. No new features after this point - hardening only.</sub> | <sub>`git checkout develop`<br>`git checkout -b release/x.y.z`<br>`git push -u origin release/x.y.z`</sub> | <sub>new `release/x.y.z`</sub> | <sub>Team lead / Release manager</sub> |
+| <sub>22</sub> | <sub>**Release**</sub> | <sub>QA runs full regression suite on the release branch in staging. Any bugs found are fixed via bugfix branches merging into the release branch (not into develop directly).</sub> | <sub>`git checkout -b bugfix/PROJ-171-description release/x.y.z`</sub> | <sub>`bugfix/*` → `release/x.y.z`</sub> | <sub>QA + Developer</sub> |
+| <sub>23</sub> | <sub>**Release**</sub> | <sub>Release signed off by QA, product owner, and security. Merge release branch into main. This triggers the production deployment pipeline.</sub> | <sub>*(PR: `release/x.y.z` → `main`)*</sub> | <sub>`release/x.y.z` → `main`</sub> | <sub>Release manager</sub> |
+| <sub>24</sub> | <sub>**Release**</sub> | <sub>Back-merge the release branch into develop to carry any release-branch bug fixes forward. CRITICAL - skipping this step means fixes are lost in the next release.</sub> | <sub>*(PR: `release/x.y.z` → `develop`)*</sub> | <sub>`release/x.y.z` → `develop`</sub> | <sub>Release manager</sub> |
+| <sub>25</sub> | <sub>**Release**</sub> | <sub>Tag the release commit on main with the version number.</sub> | <sub>`git tag -a v1.1.0 -m "Release 1.1.0"`<br>`git push origin v1.1.0`</sub> | <sub>`main`</sub> | <sub>Release manager</sub> |
+
+---
+
+### When to Write Documentation
+
+Documentation is part of the definition of done. A feature that works but is not documented is only partially shipped. The table below defines exactly when documentation is required and what form it should take.
+
+> [!IMPORTANT]
+> Documentation must be in the **same PR** as the code change. A PR that changes a public API endpoint but leaves the API docs for a follow-up ticket will almost certainly never get its docs written - the follow-up ticket will be deprioritised, the developer will have moved on, and future users will be confused.
+
+| # | Change Type | Documentation Required | Where | When |
+|---|------------|----------------------|-------|------|
+| <sub>1</sub> | <sub>New public API endpoint or method</sub> | <sub>Full description, parameters, return values, error codes, example request/response</sub> | <sub>API reference docs + README if applicable</sub> | <sub>Same PR as the code</sub> |
+| <sub>2</sub> | <sub>Modified API behaviour</sub> | <sub>Update existing docs to reflect the change. Mark deprecated parameters as deprecated.</sub> | <sub>API reference docs</sub> | <sub>Same PR as the code</sub> |
+| <sub>3</sub> | <sub>New configuration option or environment variable</sub> | <sub>Name, type, default value, valid values, what it controls</sub> | <sub>Configuration reference docs</sub> | <sub>Same PR as the code</sub> |
+| <sub>4</sub> | <sub>Breaking change</sub> | <sub>Migration guide: what broke, what replaces it, step-by-step upgrade instructions</sub> | <sub>CHANGELOG.md + migration guide in docs</sub> | <sub>Same PR as the code</sub> |
+| <sub>5</sub> | <sub>New feature with user-visible UI</sub> | <sub>User-facing description, screenshots, usage instructions</sub> | <sub>User guide or feature documentation</sub> | <sub>Same PR as the code</sub> |
+| <sub>6</sub> | <sub>Internal refactor (no behaviour change)</sub> | <sub>Update inline code comments if the logic changed. Update architecture docs if structure changed.</sub> | <sub>Code comments + architecture docs</sub> | <sub>Same PR as the code</sub> |
+| <sub>7</sub> | <sub>Bug fix</sub> | <sub>Add entry to CHANGELOG.md. If the bug affected documented behaviour, correct the docs.</sub> | <sub>CHANGELOG.md</sub> | <sub>Same PR as the code</sub> |
+| <sub>8</sub> | <sub>Internal tooling / CI / build change</sub> | <sub>Update the developer setup guide or contributing guide if the change affects how developers run the project.</sub> | <sub>CONTRIBUTING.md or developer setup docs</sub> | <sub>Same PR as the code</sub> |
+
+---
+
+### When QA Gets Involved
+
+QA is not a phase that happens after development is finished - it is a continuous presence throughout the sprint. The table below shows when QA participates and what they are doing at each stage.
+
+| # | Sprint Stage | QA Activity | What QA Needs from Dev | Outcome |
+|---|------------|------------|----------------------|---------|
+| <sub>1</sub> | <sub>**Sprint planning**</sub> | <sub>QA writes or reviews acceptance criteria for each ticket before the sprint starts. Ambiguous acceptance criteria are flagged and resolved before development begins.</sub> | <sub>Access to requirements and design docs</sub> | <sub>Each ticket has clear, testable acceptance criteria</sub> |
+| <sub>2</sub> | <sub>**During development**</sub> | <sub>QA authors automated test cases or test plans for the ticket in parallel with development. They do not wait for the code to be finished.</sub> | <sub>Ticket description and acceptance criteria</sub> | <sub>Test plan ready when the PR opens</sub> |
+| <sub>3</sub> | <sub>**PR opened**</sub> | <sub>QA is tagged as a reviewer on PRs for their assigned tickets. They verify the PR description explains how to test the change and that test coverage is adequate.</sub> | <sub>PR description with test instructions</sub> | <sub>QA approves test coverage or requests more tests</sub> |
+| <sub>4</sub> | <sub>**Branch deployed to QA env**</sub> | <sub>QA deploys the feature branch (or a build from it) to the QA environment and runs manual acceptance tests against the ticket's acceptance criteria.</sub> | <sub>Deployable build from the feature branch</sub> | <sub>PASS: ticket marked ready for merge. FAIL: bugs filed as new tickets.</sub> |
+| <sub>5</sub> | <sub>**Release branch cut**</sub> | <sub>QA runs the full regression suite on the release branch in staging. This covers all features in the sprint plus existing functionality.</sub> | <sub>Release branch deployed to staging</sub> | <sub>Release sign-off or list of blocking bugs</sub> |
+| <sub>6</sub> | <sub>**Post-release monitoring**</sub> | <sub>QA monitors error rates, performance dashboards, and user reports for the first 24-48 hours after release. Any critical issues trigger a hotfix.</sub> | <sub>Access to production monitoring dashboards</sub> | <sub>Go/no-go for hotfix if needed</sub> |
+
+---
+
+### Peer Code Review - What the Reviewer Is Actually Checking
+
+Code review is not just about catching bugs. A thorough reviewer checks multiple dimensions of quality simultaneously. The table below shows what a reviewer should look for in order of priority. If you are a reviewer, work through this list. If you are an author, review your own PR against this list before assigning reviewers.
+
+> [!TIP]
+> Before approving, ask yourself: "If this code went to production tomorrow and caused an incident, would I be comfortable explaining why I approved it?" If the answer is no, request changes.
+
+| # | Review Dimension | What to Check | Common Issues Found Here |
+|---|-----------------|--------------|-------------------------|
+| <sub>1</sub> | <sub>**Correctness**</sub> | <sub>Does the code do what the ticket says it should do? Does it handle all the acceptance criteria? Are edge cases (empty input, null, max values) handled?</sub> | <sub>Off-by-one errors, missing null checks, incorrect conditional logic, wrong formula</sub> |
+| <sub>2</sub> | <sub>**Security**</sub> | <sub>Is user input validated and sanitised? Are there SQL injection, XSS, or command injection risks? Are secrets stored correctly (not in code)? Are permissions checked?</sub> | <sub>Unvalidated input, hardcoded credentials, missing auth checks, insecure deserialization</sub> |
+| <sub>3</sub> | <sub>**Test coverage**</sub> | <sub>Are there tests for the new behaviour? Do the tests actually verify the acceptance criteria or just pass trivially? Are failure cases tested?</sub> | <sub>Missing tests for error paths, tests that only test happy path, tests that mock too aggressively</sub> |
+| <sub>4</sub> | <sub>**Readability**</sub> | <sub>Can a developer who has never seen this code understand it in 5 minutes? Are names descriptive? Are complex sections commented with WHY (not what)?</sub> | <sub>Single-letter variable names, overly clever one-liners, missing comments on non-obvious logic</sub> |
+| <sub>5</sub> | <sub>**Architecture**</sub> | <sub>Does the change fit the existing patterns of the codebase? Is it in the right module/layer? Does it introduce unnecessary coupling or circular dependencies?</sub> | <sub>Logic in the wrong layer, direct database access from a controller, missing abstraction</sub> |
+| <sub>6</sub> | <sub>**Performance**</sub> | <sub>Are there any N+1 query problems, unnecessary loops over large datasets, or missing indexes? Will this scale to production data volumes?</sub> | <sub>N+1 queries, loading entire dataset to filter in memory, synchronous calls in hot paths</sub> |
+| <sub>7</sub> | <sub>**Error handling**</sub> | <sub>Are failures handled gracefully? Are error messages useful for debugging? Are exceptions caught at the right level and not swallowed silently?</sub> | <sub>Silent catch blocks, generic error messages, exceptions caught too broadly</sub> |
+| <sub>8</sub> | <sub>**Documentation**</sub> | <sub>Is the PR description complete? Are public APIs documented? Is CHANGELOG updated? Are inline comments accurate and up to date with the code they describe?</sub> | <sub>Stale comments, missing API docs, no CHANGELOG entry for user-visible changes</sub> |
+
+---
+
+### The Daily Developer Rhythm
+
+Within a sprint, the daily cadence keeps your work integrated with the team and prevents large divergences from building up over multiple days. Following this rhythm means your rebase conflicts are small and your PRs are easy to review because they are focused and timely.
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Origin as origin/develop
+    participant CI as CI Pipeline
+    participant PR as Pull Request
+
+    Note over Dev,PR: Every morning
+    Dev->>Origin: git fetch origin
+    Dev->>Dev: git rebase origin/develop (on feature branch)
+    Note over Dev: Resolve any conflicts immediately while context is fresh
+
+    Note over Dev,PR: During the day
+    Dev->>Dev: Write code in small increments
+    Dev->>Dev: git add -p (stage only what you intend)
+    Dev->>Dev: git commit -m "feat: PROJ-123 specific change"
+    Dev->>Dev: Run tests locally after each commit
+
+    Note over Dev,PR: Before end of day
+    Dev->>Origin: git push origin feature/PROJ-123
+    CI->>PR: Run automated checks on pushed commits
+    Dev->>PR: Check CI status - fix any failures before tomorrow
+
+    Note over Dev,PR: When ready for review
+    Dev->>Origin: git fetch + git rebase origin/develop
+    Dev->>Dev: git diff develop..HEAD (self-review)
+    Dev->>PR: Open PR with full description
+    Dev->>PR: Assign reviewers
+```
+
+---
+
+### Do I Pull Down develop Every Day?
+
+Yes. Every single day, first thing. Here is why this matters at scale.
+
+On a team of ten developers, each person merges at least one PR per day. That means `develop` moves forward by at least ten commits every day. If you go two days without syncing, your branch is twenty commits behind. If you go a week, it is fifty commits behind. The further behind you fall, the larger your rebase conflict surface becomes - you are not just integrating your changes with main, you are integrating with everything your teammates shipped while you were working in isolation.
+
+Small, frequent syncs with `develop` keep conflict surfaces tiny. A daily rebase on a branch that is one commit behind takes ten seconds to resolve. A weekly rebase on a branch that is fifty commits behind can take an hour.
+
+> [!TIP]
+> Set a reminder or alias. Some developers run `git fetch && git rebase origin/develop` as the first command every morning before their coffee is finished brewing. Some teams configure their IDE to fetch automatically on startup. Either way, make it a reflex, not a decision.
+
+```bash
+# Morning sync alias - add to your .bashrc or .zshrc
+alias morning='git fetch origin && git rebase origin/develop'
+
+# Or as a full check:
+alias syncup='git fetch origin && echo "Current branch: $(git branch --show-current)" && git rebase origin/develop && echo "Synced. Run your tests."'
+```
+
+---
+
+### PR Description Template
+
+A well-written PR description saves reviewer time, creates a permanent record of the decision, and makes the squash commit message on `develop` meaningful. Use this template for every PR.
+
+```markdown
+## What
+Brief description of what this PR changes. One to three sentences.
+
+## Why
+Why is this change needed? Link to the ticket: Closes #PROJ-123
+
+## How to Test
+1. Step-by-step instructions to verify the change works
+2. Include any test credentials, feature flags, or environment setup needed
+3. Describe what the expected output or behaviour is
+
+## Screenshots (if UI change)
+[attach before/after screenshots]
+
+## Checklist
+- [ ] Tests added or updated
+- [ ] Documentation updated (if API or behaviour changed)
+- [ ] Self-reviewed the diff line by line
+- [ ] Rebased onto latest develop
+- [ ] CI is passing
+```
+
+> [!NOTE]
+> Most teams configure a `PULL_REQUEST_TEMPLATE.md` file in the `.github/` directory of the repository so this template auto-populates whenever a PR is opened. If your team does not have one, create it - it is a five-minute investment that pays back every PR forever.
+
+---
+
 ## Architecture Overview
 
 GitSim is built around a single central class, `GitRepo`, which acts as a **pure in-memory state machine**. The state machine holds every piece of information a real Git repository would store on disk inside `.git/`: the commit object graph, branch pointer map, staging index, working tree snapshot, remote tracking references, and pull request objects. Nothing is ever written to disk and no subprocess is ever spawned.
@@ -313,16 +702,67 @@ A commit is a permanent, immutable snapshot of your entire tracked file tree at 
 
 In GitSim, `repo.commit(message)` does exactly this: it creates a `Commit` dataclass with a random 7-character hex hash, a reference to the current HEAD as parent, a deep copy of the staged files as the tree snapshot, and advances the current branch pointer to the new hash. The commit is stored in `_commits[hash]` for O(1) retrieval.
 
-### What Is Rebase?
+**What exactly is stored inside one commit object:**
+
+```mermaid
+block-beta
+  columns 3
+
+  block:COMMIT["📦 Commit Object  a3f9c2b"]:3
+    columns 3
+    H["🔑 hash\na3f9c2b"] M["💬 message\nfeat: add storm endpoint"] A["👤 author\nAlice"]
+    T["🕐 timestamp\n2024-01-01T09:00"] P["⬅️ parent\nb7e2f1a"] B["🌿 branch\nfeature/PROJ-142"]
+    space:3
+    TREE["🌲 tree snapshot — full copy of every tracked file at this moment"]:3
+  end
+
+  space:3
+
+  block:PARENT["📦 Parent Commit  b7e2f1a"]:3
+    columns 3
+    PH["🔑 hash\nb7e2f1a"] PM["💬 message\nchore: bootstrap"] PA["👤 author\nAlice"]
+    PT["🕐 timestamp\n2024-01-01T08:00"] PP["⬅️ parent\n(root - none)"] PB["🌿 branch\nmain"]
+  end
+
+  COMMIT-- "parent pointer" -->PARENT
+```
+
+> [!NOTE]
+> The **parent pointer** is what makes commits form a chain. Every commit knows its parent. By following parent pointers backward from any branch tip you reconstruct the entire history of that branch. This chain is the Git commit graph (DAG).
 
 Rebase is the operation of replaying a sequence of commits onto a different base commit. When you run `git rebase main` on a feature branch, Git finds the point where your branch diverged from main, takes every commit you made since that divergence, and re-applies each one on top of the current tip of main - one at a time, in order. Each replayed commit gets a brand-new hash because its parent has changed. The old commits are not deleted immediately, but they are no longer reachable from any branch pointer, so they eventually get garbage collected.
 
 In GitSim, `repo.rebase(onto)` deep-copies each commit in the current branch that is not in the target branch, assigns new hashes to each one, rewires the parent pointers to form a linear chain starting from the tip of the target branch, and updates the current branch pointer to the new tip. This correctly shows that rebase rewrites history - the commits look the same but they have different hashes.
 
-> [!WARNING]
-> Because rebase rewrites commit hashes, you must `git push --force-with-lease` after rebasing a branch that has already been pushed. Never rebase a branch that other people are actively working on - you will rewrite commits they have already built upon, creating a painful divergence for your teammates.
+**Before rebase — diverged history (the problem):**
 
-### Commit vs Rebase - Side by Side
+```mermaid
+gitGraph LR:
+   commit id: "A"
+   commit id: "B  ← branch point"
+   branch feature/my-work
+   commit id: "C  feat: first change"
+   commit id: "D  feat: second change"
+   checkout main
+   commit id: "E  teammate merged"
+   commit id: "F  teammate merged"
+```
+
+**After `git rebase main` — linear history (the goal):**
+
+```mermaid
+gitGraph LR:
+   commit id: "A"
+   commit id: "B"
+   commit id: "E  teammate merged"
+   commit id: "F  teammate merged"
+   branch feature/my-work
+   commit id: "C' NEW HASH — replayed"
+   commit id: "D' NEW HASH — replayed"
+```
+
+> [!WARNING]
+> Notice that `C` became `C'` and `D` became `D'` — **these are brand new commit objects with different hashes** even though the code change inside them is identical. This is why `git push --force-with-lease` is required after a rebase: the remote still has the old `C` and `D` objects. A regular push would be rejected because the histories have diverged.
 
 | # | Dimension | `git commit` | `git rebase` |
 |---|-----------|-------------|-------------|
@@ -590,6 +1030,53 @@ GitSim uses four Python dataclasses to model Git's core objects. These map close
 ### Commit Object
 
 A `Commit` is an immutable snapshot. Once created it is never mutated. This mirrors how real Git commits are content-addressed and permanently immutable once written to the object store. In real Git, the hash IS the content - changing a single character in the message, author, or file tree produces a completely different hash. GitSim simulates this immutability by never modifying an existing `Commit` object.
+
+**How a SHA hash is computed and what it protects:**
+
+```mermaid
+flowchart LR
+    subgraph INPUT ["🔢 Hash Inputs — every byte matters"]
+        direction TB
+        I1["tree SHA\n(all file contents)"]
+        I2["parent SHA\n(previous commit)"]
+        I3["author + email\n+ timestamp"]
+        I4["commit message"]
+    end
+
+    subgraph HASH ["⚙️ SHA-1 / SHA-256 function"]
+        direction TB
+        F1["deterministic\none-way function"]
+        F2["same inputs\n= same hash\nalways"]
+        F3["1-bit change in input\n= completely\ndifferent hash"]
+    end
+
+    subgraph OUTPUT ["🔑 Output — the commit hash"]
+        direction TB
+        O1["a3f9c2b4e1d8f7...\n(40 hex chars / 160 bits)"]
+        O2["shown short as\na3f9c2b (7 chars)"]
+    end
+
+    subgraph PROTECTS ["🛡️ What the hash prevents"]
+        direction TB
+        P1["✅ Tamper detection\nEdit one byte → hash mismatch → Git rejects it"]
+        P2["✅ Silent corruption\nNetwork corruption changes bytes → caught immediately"]
+        P3["✅ History rewriting\nYou cannot edit old commits without changing all\nchild hashes downstream — the whole chain breaks"]
+    end
+
+    INPUT --> HASH --> OUTPUT --> PROTECTS
+```
+
+**When and how you create a hash:**
+
+| # | When | Command | What Gets Hashed | Result |
+|---|------|---------|-----------------|--------|
+| <sub>1</sub> | <sub>Every `git commit`</sub> | <sub>`git commit -m "msg"`</sub> | <sub>Tree (file snapshot) + parent hash + author + timestamp + message</sub> | <sub>New unique commit hash like `a3f9c2b`</sub> |
+| <sub>2</sub> | <sub>Every `git add`</sub> | <sub>`git add file.py`</sub> | <sub>File content only</sub> | <sub>Blob hash stored in the index — deduplicates identical files across commits</sub> |
+| <sub>3</sub> | <sub>Every `git rebase`</sub> | <sub>`git rebase origin/main`</sub> | <sub>Same content as original commit but with a new parent hash</sub> | <sub>Brand-new commit hash — this is why rebase "rewrites history"</sub> |
+| <sub>4</sub> | <sub>Every `git tag -a`</sub> | <sub>`git tag -a v1.0.0 -m "release"`</sub> | <sub>Tag object (name + message + tagger + target commit hash)</sub> | <sub>Tag hash — permanent pointer to a specific commit</sub> |
+
+> [!NOTE]
+> You never manually create or manage hashes. Git computes them automatically every time an object is stored. The only time you interact with hashes directly is when you reference a specific commit (e.g., `git checkout a3f9c2b` or `git revert a3f9c2b`). Even then you only need the first 7 characters — Git finds the full hash from those as long as it is unambiguous.
 
 | # | Field | Type | Description |
 |---|-------|------|-------------|
@@ -940,9 +1427,9 @@ All terminal output in GitSim flows through `utils.py`. Nothing else in the code
 
 ```python
 # Usage
-python run.py                  # Run all 4 scenarios
+python run.py                  # Run all 5 scenarios
 python run.py --scenario 1     # Run only scenario 1
-python run.py -s 2             # Short flag, scenario 2
+python run.py -s 5             # Corporate branching strategy
 ```
 
 **Error handling:** Each scenario is wrapped in a `try/except`. If a scenario raises an unhandled exception, the error is printed with the scenario number and the exception is re-raised so the exit code is non-zero. This allows CI pipelines to detect failures.
@@ -967,7 +1454,7 @@ scenarios = {
 ## Key Takeaways
 
 > [!IMPORTANT]
-> These eight rules represent the professional Git workflow that GitSim demonstrates across all four scenarios. They are not arbitrary conventions - each one exists to solve a specific, recurring problem in team software development. Internalising all eight will make you a significantly more effective and less error-prone collaborator on any team.
+> These eight rules represent the professional Git workflow that GitSim demonstrates across all five scenarios. They are not arbitrary conventions - each one exists to solve a specific, recurring problem in team software development. Internalising all eight will make you a significantly more effective and less error-prone collaborator on any team.
 
 1. **Every task gets its own branch, branched from up-to-date main.** Working directly on main bypasses every quality control your team has in place - code review, automated tests, security scans - and risks destabilising the shared codebase for every teammate the moment you push.
 
