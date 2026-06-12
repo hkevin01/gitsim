@@ -36,6 +36,7 @@
 - [Branch Tree in Three Dimensions](#branch-tree-in-three-dimensions)
 - [Deployment Environments](#deployment-environments)
 - [Developer Sprint Workflow - Step by Step](#developer-sprint-workflow---step-by-step)
+- [How Documentation Is Tracked by Git](#how-documentation-is-tracked-by-git)
 - [Module Reference](#module-reference)
 - [Data Structures](#data-structures)
 - [State Machine Flow](#state-machine-flow)
@@ -540,8 +541,6 @@ Documentation is part of the definition of done. A feature that works but is not
 | <sub>8</sub> | <sub>Internal tooling / CI / build change</sub> | <sub>Update the developer setup guide or contributing guide if the change affects how developers run the project.</sub> | <sub>CONTRIBUTING.md or developer setup docs</sub> | <sub>Same PR as the code</sub> |
 
 ---
-
-### When QA Gets Involved
 
 QA is not a phase that happens after development is finished - it is a continuous presence throughout the sprint. The table below shows when QA participates and what they are doing at each stage.
 
@@ -1485,6 +1484,205 @@ python run.py      # that is all that is needed
 
 > [!TIP]
 > To run a specific scenario in isolation - for example when running a focused workshop on conflict resolution - use the `--scenario` flag: `python run.py --scenario 2`. This runs only the merge conflict scenario and produces about 60 lines of output, making it easy to walk through live with a group without scrolling through unrelated material.
+
+---
+
+## How Documentation Is Tracked by Git
+
+Documentation files are tracked by Git in exactly the same way as code files. To Git, a `.md` file, a `.rst` file, a `.txt` file, and a `.py` file are all just sequences of bytes. Git does not treat them differently. The `git add`, `git commit`, `git diff`, `git log`, and `git blame` commands all work identically on documentation as they do on source code. This is one of Git's most important properties for professional teams — the history of *why* the docs changed is preserved alongside the history of why the code changed.
+
+> [!NOTE]
+> Many teams store documentation in the same repository as the code (`docs-as-code`). This is the recommended approach because it keeps docs in sync with the code that describes. When a developer changes an API and updates the docs in the same commit or PR, reviewers can see both changes together. If docs live in a separate repository, this linkage is lost.
+
+---
+
+### What Branch Name Should Documentation Changes Use?
+
+The branch name depends entirely on **why** the documentation is being written. There is no special "docs branch type" — documentation follows the same branch naming rules as everything else, because documentation *is* part of the work, not a separate activity.
+
+```mermaid
+flowchart TD
+    Q{Why are you\nwriting docs?}
+
+    Q -->|"New feature or API\nalready has a ticket"| A
+    Q -->|"Bug in the docs —\nwrong information, outdated"| B
+    Q -->|"Docs-only work —\nno code change involved"| C
+    Q -->|"Release notes /\nCHANGELOG for this sprint"| D
+    Q -->|"Emergency — docs describe\nbroken production behaviour"| E
+
+    A["Use the same feature branch\nfeature/PROJ-123-description\nDocs go in the same PR as the code"]
+    B["bugfix/PROJ-188-fix-auth-api-docs\nSame rules as a code bugfix\nTarget: develop"]
+    C["docs/PROJ-201-add-deployment-guide\nDocs-only branch with docs/ prefix\nTarget: develop"]
+    D["Use the release branch\nrelease/1.1.0\nCHANGELOG committed directly here"]
+    E["hotfix/PROJ-202-correct-critical-doc-error\nSame rules as a code hotfix\nTarget: main + back-merge to develop"]
+
+    style A fill:#1a3a1a,stroke:#2ea043,color:#fff
+    style B fill:#1a2a3a,stroke:#4a9eff,color:#fff
+    style C fill:#2a1a3a,stroke:#9a4aff,color:#fff
+    style D fill:#3a2a0a,stroke:#f0a030,color:#fff
+    style E fill:#3a0a0a,stroke:#ff4a4a,color:#fff
+```
+
+---
+
+### Branch Naming for Documentation — Full Reference
+
+| # | Situation | Branch Name Pattern | Example | Target Branch | Ticket Required? |
+|---|-----------|-------------------|---------|--------------|-----------------|
+| <sub>1</sub> | <sub>**Docs bundled with a feature**</sub> | <sub>`feature/<TICKET-ID>-<description>`</sub> | <sub>`feature/PROJ-123-user-auth`</sub> | <sub>`develop`</sub> | <sub>Yes — same ticket as the feature</sub> |
+| <sub>2</sub> | <sub>**Docs-only new content** (new guide, new tutorial, new architecture doc)</sub> | <sub>`docs/<TICKET-ID>-<description>`</sub> | <sub>`docs/PROJ-201-add-deployment-guide`</sub> | <sub>`develop`</sub> | <sub>Yes — create a docs ticket in the sprint</sub> |
+| <sub>3</sub> | <sub>**Fix incorrect or outdated docs**</sub> | <sub>`bugfix/<TICKET-ID>-<description>`</sub> | <sub>`bugfix/PROJ-188-fix-stale-api-reference`</sub> | <sub>`develop`</sub> | <sub>Yes — file a bug ticket for the bad docs</sub> |
+| <sub>4</sub> | <sub>**Improve or expand existing docs** (no bug, just better explanation)</sub> | <sub>`docs/<TICKET-ID>-<description>`</sub> | <sub>`docs/PROJ-215-expand-rebase-section`</sub> | <sub>`develop`</sub> | <sub>Yes — improvement tickets keep work visible and prioritised</sub> |
+| <sub>5</sub> | <sub>**CHANGELOG / release notes**</sub> | <sub>Written directly on `release/<version>`</sub> | <sub>Committed on `release/1.1.0`</sub> | <sub>`main` + back-merge `develop`</sub> | <sub>No separate ticket — part of the release process</sub> |
+| <sub>6</sub> | <sub>**Docs describe broken production behaviour** (emergency)</sub> | <sub>`hotfix/<TICKET-ID>-<description>`</sub> | <sub>`hotfix/PROJ-202-correct-critical-api-error`</sub> | <sub>`main` + back-merge `develop`</sub> | <sub>Yes — P1 ticket, treated as a production incident</sub> |
+| <sub>7</sub> | <sub>**Inline code comments only** (no separate file)</sub> | <sub>Same branch as the code being commented</sub> | <sub>`feature/PROJ-123-user-auth`</sub> | <sub>Same as code change</sub> | <sub>Same ticket as the code</sub> |
+
+> [!TIP]
+> The `docs/` prefix (e.g. `docs/PROJ-201-add-deployment-guide`) is a widely-used convention that signals to CI/CD pipelines that this branch contains no runnable code changes. Many teams configure their CI to skip the full test suite for `docs/*` branches and only run a documentation linting step (e.g. checking for broken links, spell checking, markdown syntax). This makes docs-only PRs faster to merge.
+
+---
+
+### What Goes Inside a Documentation Commit
+
+The commit message for a documentation change follows the same **Conventional Commits** format as a code change. The `type` is `docs`. The `scope` (optional) identifies which part of the documentation changed. The description explains what changed and why — not just "update docs", which tells a future reader nothing.
+
+```
+docs(api): PROJ-201 add deployment guide for Kubernetes environments
+
+Previously there was no documentation for deploying to K8s. New
+developers had to ask a senior engineer every time. This guide
+covers namespace setup, secret injection, health check configuration,
+and the rollout strategy.
+
+Closes #PROJ-201
+```
+
+**The anatomy of a docs commit message:**
+
+```
+docs(scope): TICKET-ID what changed and why
+│    │       │          │
+│    │       │          └─ One sentence. WHY it changed, not just "update docs"
+│    │       └─ Ticket ID so the commit is traceable to a sprint item
+│    └─ Optional: which section changed (api, auth, deployment, changelog)
+└─ Always "docs" for documentation-only changes
+```
+
+| # | Bad commit message | Why it's bad | Good commit message |
+|---|-------------------|-------------|---------------------|
+| <sub>1</sub> | <sub>`update readme`</sub> | <sub>Zero information. What was updated? Why?</sub> | <sub>`docs(readme): PROJ-201 add K8s deployment section`</sub> |
+| <sub>2</sub> | <sub>`fix docs`</sub> | <sub>What was wrong? What did you fix?</sub> | <sub>`docs(api): PROJ-188 correct stale auth endpoint parameters`</sub> |
+| <sub>3</sub> | <sub>`documentation changes`</sub> | <sub>Plural, vague, untraceable to any requirement</sub> | <sub>`docs(changelog): add v1.1.0 release notes for sprint 22`</sub> |
+| <sub>4</sub> | <sub>`wip`</sub> | <sub>Never acceptable in a PR — squash before opening</sub> | <sub>`docs(guide): PROJ-215 draft initial rebase tutorial`</sub> |
+
+---
+
+### How Git Tracks a New Documentation File — Step by Step
+
+When you create a brand-new documentation file, Git does not automatically know about it. A new file starts as **untracked** — Git sees it exists on disk but has no record of it and will not include it in any commit until you explicitly stage it. This is the same behaviour as any new source file.
+
+```mermaid
+sequenceDiagram
+    participant FS as File System
+    participant WT as Working Tree (untracked)
+    participant IDX as Staging Index
+    participant HIST as Commit History
+
+    Note over FS,HIST: You create a new file: docs/deployment-guide.md
+
+    FS->>WT: docs/deployment-guide.md created
+    Note over WT: git status shows:<br/>Untracked files:<br/>  docs/deployment-guide.md
+
+    WT->>IDX: git add docs/deployment-guide.md
+    Note over IDX: git status shows:<br/>Changes to be committed:<br/>  new file: docs/deployment-guide.md
+
+    Note over IDX: You continue editing —<br/>git add again to stage latest version
+
+    IDX->>HIST: git commit -m "docs(api): PROJ-201 add deployment guide"
+    Note over HIST: File is now permanently in history.<br/>git log shows the commit.<br/>git blame docs/deployment-guide.md<br/>shows who wrote each line and when.
+```
+
+> [!NOTE]
+> If you have a `docs/` directory that does not exist yet, Git will track the files inside it but not the directory itself — Git tracks files, not folders. An empty directory cannot be committed. The convention for "I need this directory to exist but it has no files yet" is to place a `.gitkeep` placeholder file inside it: `touch docs/.gitkeep && git add docs/.gitkeep`.
+
+---
+
+### What Files Live Where — Standard Documentation Layout
+
+Most professional projects follow a consistent layout for documentation files. Knowing where things live means you know exactly which file to edit without hunting around.\
+
+```
+project-root/
+├── README.md                    <- Project overview, quick start, badges
+│                                   Audience: anyone landing on the repo
+│
+├── CHANGELOG.md                 <- Version history, what changed in each release
+│                                   Written on: release branches
+│                                   Format: https://keepachangelog.com
+│
+├── CONTRIBUTING.md              <- How to contribute, dev setup, PR process
+│                                   Audience: external contributors and new team members
+│
+├── docs/                        <- Deeper documentation beyond the README
+│   ├── architecture/
+│   │   ├── overview.md          <- System design, component diagrams
+│   │   └── decisions/
+│   │       └── ADR-001-use-jwt.md  <- Architecture Decision Records (ADRs)
+│   │                               Why a technical decision was made
+│   │                               Written at: decision time, never deleted
+│   │
+│   ├── api/
+│   │   ├── reference.md         <- Complete API reference (auto-generated or hand-written)
+│   │   └── authentication.md    <- Topic-specific deep dives
+│   │
+│   ├── guides/
+│   │   ├── getting-started.md   <- New developer onboarding walkthrough
+│   │   ├── deployment.md        <- How to deploy to each environment
+│   │   └── troubleshooting.md   <- Common problems and solutions
+│   │
+│   └── runbooks/
+│       ├── incident-response.md <- What to do when production is on fire
+│       └── database-backup.md   <- Operational procedures
+│
+└── .github/
+    ├── PULL_REQUEST_TEMPLATE.md <- Auto-populates when a PR is opened
+    ├── ISSUE_TEMPLATE/
+    │   ├── bug_report.md        <- Structured template for bug reports
+    │   └── feature_request.md   <- Structured template for feature requests
+    └── CODEOWNERS               <- Who is automatically assigned to review
+                                    changes in specific directories
+```
+
+> [!TIP]
+> **Architecture Decision Records (ADRs)** in `docs/architecture/decisions/` are one of the highest-value documentation types that most teams neglect. An ADR is a short document that captures: the context of a decision, the options considered, the decision made, and the consequences. They are never deleted or edited — only superseded by a new ADR. Six months later when someone asks "why do we use JWT instead of sessions?" the ADR has the answer, with the original reasoning intact.
+
+---
+
+### What git blame and git log Tell You About Documentation
+
+Once documentation is committed, Git's history tools give you a complete audit trail — you can see exactly who wrote every line of a doc, when, in which PR, and why (from the commit message). This is one of the most underused features of treating documentation as code.
+
+| # | Command | What It Shows | Example Use Case |
+|---|---------|--------------|-----------------|
+| <sub>1</sub> | <sub>`git log docs/`</sub> | <sub>All commits that touched any file in the `docs/` directory, with messages, authors, and dates</sub> | <sub>See the full history of documentation changes for a release audit</sub> |
+| <sub>2</sub> | <sub>`git log --follow docs/api/reference.md`</sub> | <sub>All commits to a specific doc file, even if the file was renamed or moved</sub> | <sub>Find when a specific API parameter was documented or changed</sub> |
+| <sub>3</sub> | <sub>`git blame docs/api/reference.md`</sub> | <sub>Every line of the file annotated with: the commit hash that last changed it, the author, the date, and the line number</sub> | <sub>Find who wrote a specific claim in the docs and in which PR it was added</sub> |
+| <sub>4</sub> | <sub>`git diff develop..feature/PROJ-123 -- docs/`</sub> | <sub>All documentation changes introduced by a feature branch compared to develop</sub> | <sub>Review exactly what docs a PR adds or changes before approving</sub> |
+| <sub>5</sub> | <sub>`git log --grep="docs(api)"` </sub> | <sub>All commits whose message matches the search pattern</sub> | <sub>Find all API documentation commits across the entire project history</sub> |
+
+```bash
+# See every line of a doc and who last changed it:
+git blame docs/api/reference.md
+
+# See all changes to docs in the last sprint:
+git log --since="2 weeks ago" -- docs/
+
+# See exactly what a docs PR changed:
+git diff develop..docs/PROJ-201-deployment-guide -- docs/
+
+# Find when a specific word was added to or removed from docs:
+git log -S "kubernetes" -- docs/
+```
 
 ---
 
