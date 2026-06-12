@@ -3,11 +3,11 @@ File: run.py
 
 ID: RUN-001
 Purpose: Main entry point for the GitSim simulator.
-         Instantiates a GitRepo and runs all four scenarios in sequence.
+         Instantiates a GitRepo and runs all five scenarios in sequence.
 Requirement: Runnable with `python run.py` from the project root.
 Usage:
     python run.py              # run all scenarios
-    python run.py --scenario 1 # run only scenario 1 (1=feature, 2=conflict, 3=rebase, 4=bad)
+    python run.py --scenario 1 # 1=feature, 2=conflict, 3=rebase, 4=bad-practice, 5=branching
 Side Effects: Writes to stdout only. No filesystem mutations. No git commands.
 """
 
@@ -16,7 +16,7 @@ import argparse
 
 from gitsim.repo import GitRepo
 from gitsim.explain import intro, outro
-from gitsim.scenarios import feature_branch, merge_conflict, rebase_example, bad_practice
+from gitsim.scenarios import feature_branch, merge_conflict, rebase_example, bad_practice, branching_strategy
 from gitsim.utils import banner, explain, CYAN, GREEN
 
 
@@ -32,9 +32,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--scenario", "-s",
         type=int,
-        choices=[1, 2, 3, 4],
+        choices=[1, 2, 3, 4, 5],
         default=None,
-        help="Run a single scenario: 1=feature, 2=conflict, 3=rebase, 4=bad-practice",
+        help="Run a single scenario: 1=feature, 2=conflict, 3=rebase, 4=bad-practice, 5=branching-strategy",
     )
     return p.parse_args()
 
@@ -55,13 +55,14 @@ def main() -> int:
 
     # Each scenario gets its own fresh repo to avoid state leakage
     scenarios = {
-        1: ("Feature Branch Workflow",   feature_branch.run),
-        2: ("Merge Conflict Resolution", merge_conflict.run),
-        3: ("Rebasing",                  rebase_example.run),
-        4: ("Bad Practices",             bad_practice.run),
+        1: ("Feature Branch Workflow",        feature_branch.run),
+        2: ("Merge Conflict Resolution",      merge_conflict.run),
+        3: ("Rebasing",                        rebase_example.run),
+        4: ("Bad Practices",                   bad_practice.run),
+        5: ("Corporate Branching Strategy",    branching_strategy.run),
     }
 
-    selected = [args.scenario] if args.scenario else [1, 2, 3, 4]
+    selected = [args.scenario] if args.scenario else list(scenarios.keys())
 
     for num in selected:
         name, fn = scenarios[num]

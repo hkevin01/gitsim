@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)](https://github.com/hkevin01/gitsim)
 [![Dependencies](https://img.shields.io/badge/Dependencies-None-brightgreen)](https://github.com/hkevin01/gitsim)
 [![Standard Library](https://img.shields.io/badge/stdlib%20only-no%20pip%20needed-brightgreen)](https://docs.python.org/3/library/)
-[![Scenarios](https://img.shields.io/badge/Scenarios-4-orange)](https://github.com/hkevin01/gitsim)
+[![Scenarios](https://img.shields.io/badge/Scenarios-5-orange)](https://github.com/hkevin01/gitsim)
 [![Concepts](https://img.shields.io/badge/Git%20Concepts-12-blueviolet)](https://github.com/hkevin01/gitsim)
 [![Status](https://img.shields.io/badge/Status-Active-success)](https://github.com/hkevin01/gitsim)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/hkevin01/gitsim/pulls)
@@ -32,6 +32,7 @@
 - [Git History and Diffs - Auto vs Manual](#git-history-and-diffs---auto-vs-manual)
 - [Types of Merging](#types-of-merging)
 - [The PullRequest Object](#the-pullrequest-object)
+- [Corporate Branching Strategy](#corporate-branching-strategy)
 - [Module Reference](#module-reference)
 - [Data Structures](#data-structures)
 - [State Machine Flow](#state-machine-flow)
@@ -74,7 +75,7 @@ GitSim was built to close that gap. By simulating the entire lifecycle in sequen
 git clone https://github.com/hkevin01/gitsim.git
 cd gitsim
 
-# Run all 4 scenarios in sequence
+# Run all 5 scenarios in sequence
 python run.py
 
 # Run a single scenario by number
@@ -82,6 +83,7 @@ python run.py --scenario 1    # Feature branch lifecycle
 python run.py --scenario 2    # Merge conflict resolution
 python run.py --scenario 3    # Rebasing onto main
 python run.py -s 4            # Bad practices demonstration
+python run.py -s 5            # Corporate branching strategy
 ```
 
 > [!TIP]
@@ -101,6 +103,176 @@ GitSim ships with four fully scripted scenarios. Each scenario receives its own 
 | <sub>2</sub> | <sub>**Merge Conflict Resolution**</sub> | <sub>Two diverging branches modifying the same line, conflict marker rendering (`<<<<<<<`, `=======`, `>>>>>>>`), manual resolution, staging the fix, completing the merge commit with two parents</sub> |
 | <sub>3</sub> | <sub>**Rebasing**</sub> | <sub>Standard rebase onto main to linearise a diverged history, interactive rebase to squash multiple WIP commits into one clean commit, hash rewrite demonstration, force-push requirement after rebase</sub> |
 | <sub>4</sub> | <sub>**Bad Practices**</sub> | <sub>Direct commit to main, vague commit messages, giant monolithic commits, force-push to a shared branch - all shown with explicit `[WARNING]` output and the correct alternative demonstrated immediately after each violation</sub> |
+| <sub>5</sub> | <sub>**Corporate Branching Strategy**</sub> | <sub>Full enterprise branch hierarchy: `main`, `develop`, `release/x.y.z`, `feature/TICKET-description`, `bugfix/TICKET-description`, `test/sprint-description`, `hotfix/TICKET-description` - correct naming conventions, merge targets, and lifecycle rules for each tier on a large multi-developer project</sub> |
+
+---
+
+## Corporate Branching Strategy
+
+On a large project with many developers working simultaneously, a flat single-branch workflow breaks down immediately. Two developers working on the same file will collide. A half-finished feature will block a critical hotfix from shipping. A poorly named branch makes it impossible to know at a glance what work is in progress. The solution is a structured branch hierarchy where every branch has a specific tier, a specific naming convention, a specific source branch it must be cut from, and a specific target it must merge back into.
+
+GitSim Scenario 5 (`python run.py --scenario 5`) demonstrates this full hierarchy end to end, with realistic ticket-ID-based naming, multi-developer parallel work, review cycles, a release hardening phase, and an emergency hotfix. The sections below document the conventions so they can be applied directly on a real project.
+
+> [!IMPORTANT]
+> The most critical rule of corporate branching is that **the merge direction is strictly enforced**. Feature branches merge into `develop`. Release branches merge into `main` AND back into `develop`. Hotfix branches merge into `main` AND back into `develop`. Nothing except a release branch or hotfix branch ever merges directly into `main`. Violating these merge targets is the single most common cause of "lost fixes" - where a bug fix shipped in one release is accidentally missing from the next release because the fix never made it back to `develop`.
+
+### The Branch Hierarchy
+
+```mermaid
+gitGraph
+   commit id: "v1.0.0 baseline" tag: "v1.0.0"
+   branch develop
+   checkout develop
+   commit id: "open v1.1.0 sprint"
+   branch feature/PROJ-142-user-auth
+   commit id: "feat: JWT login"
+   commit id: "fix: expiry check"
+   checkout develop
+   merge feature/PROJ-142-user-auth id: "squash: PROJ-142"
+   branch feature/PROJ-157-password-reset
+   commit id: "feat: reset flow"
+   checkout develop
+   merge feature/PROJ-157-password-reset id: "squash: PROJ-157"
+   branch bugfix/PROJ-163-race-condition
+   commit id: "fix: login lock"
+   checkout develop
+   merge bugfix/PROJ-163-race-condition id: "squash: PROJ-163"
+   branch release/1.1.0
+   commit id: "bump v1.1.0"
+   branch bugfix/PROJ-171-header-case
+   commit id: "fix: header case"
+   checkout release/1.1.0
+   merge bugfix/PROJ-171-header-case id: "squash: PROJ-171"
+   checkout main
+   merge release/1.1.0 id: "ship v1.1.0" tag: "v1.1.0"
+   branch hotfix/PROJ-175-null-crash
+   commit id: "hotfix: null guard"
+   checkout main
+   merge hotfix/PROJ-175-null-crash id: "hotfix ship" tag: "v1.1.1"
+```
+
+> The diagram above shows the full corporate branch lifecycle for a single sprint. Read it left to right: `main` is the bottom rail (production), `develop` is the integration rail, feature and bugfix branches fan out from `develop` and merge back in, a `release` branch is cut from `develop` for hardening, and a `hotfix` branch fans out directly from `main` for an emergency production patch.
+
+### Branch Naming Conventions
+
+Consistent naming is not aesthetics - it is tooling infrastructure. CI/CD pipelines use branch name prefixes to determine what environment to deploy to. JIRA and Linear use branch names to automatically link commits to tickets. Slack and Teams integrations use branch names in notifications. GitHub Actions `on: push: branches:` filters use branch name patterns. Every convention below exists because something downstream depends on it.
+
+| # | Branch Type | Naming Pattern | Example | Source Branch | Merge Target | Lifetime |
+|---|-------------|---------------|---------|--------------|-------------|----------|
+| <sub>1</sub> | <sub>**main**</sub> | <sub>`main`</sub> | <sub>`main`</sub> | <sub>n/a - permanent</sub> | <sub>n/a - only receives merges</sub> | <sub>Permanent - never deleted</sub> |
+| <sub>2</sub> | <sub>**develop**</sub> | <sub>`develop`</sub> | <sub>`develop`</sub> | <sub>Cut from `main` once at project start</sub> | <sub>n/a - only receives merges from feature/bugfix/test</sub> | <sub>Permanent - never deleted</sub> |
+| <sub>3</sub> | <sub>**feature**</sub> | <sub>`feature/<TICKET-ID>-<kebab-description>`</sub> | <sub>`feature/PROJ-142-user-authentication`</sub> | <sub>`develop` (always up-to-date)</sub> | <sub>`develop` via PR with squash merge</sub> | <sub>Short - delete immediately after merge</sub> |
+| <sub>4</sub> | <sub>**bugfix**</sub> | <sub>`bugfix/<TICKET-ID>-<kebab-description>`</sub> | <sub>`bugfix/PROJ-163-login-race-condition`</sub> | <sub>`develop` (for dev/QA bugs) or `release/x.y.z` (for release bugs)</sub> | <sub>`develop` or `release/x.y.z` depending on source</sub> | <sub>Short - delete immediately after merge</sub> |
+| <sub>5</sub> | <sub>**test / qa**</sub> | <sub>`test/<sprint-or-ticket>-<description>`</sub> | <sub>`test/PROJ-sprint-22-auth-integration`</sub> | <sub>`develop`</sub> | <sub>`develop` via PR</sub> | <sub>Short - delete after merge</sub> |
+| <sub>6</sub> | <sub>**release**</sub> | <sub>`release/<semver>` or `release/<year-quarter>`</sub> | <sub>`release/1.1.0` or `release/2024-Q3`</sub> | <sub>`develop` when sprint is complete</sub> | <sub>`main` AND back-merge into `develop`</sub> | <sub>Medium - kept until after release, then archived or deleted</sub> |
+| <sub>7</sub> | <sub>**hotfix**</sub> | <sub>`hotfix/<TICKET-ID>-<kebab-description>`</sub> | <sub>`hotfix/PROJ-175-null-deref-crash`</sub> | <sub>`main` (ONLY branch type that does this)</sub> | <sub>`main` AND back-merge into `develop`</sub> | <sub>Short - delete immediately after both merges</sub> |
+| <sub>8</sub> | <sub>**release-candidate**</sub> | <sub>`rc/<version>-rc<n>`</sub> | <sub>`rc/1.1.0-rc1`</sub> | <sub>`release/x.y.z` when ready for staging deploy</sub> | <sub>No merge target - deployed to staging, deleted after go/no-go decision</sub> | <sub>Very short - ephemeral staging snapshot</sub> |
+
+### What Each Branch Tier Looks Like
+
+#### Individual Developer Branch - `feature/PROJ-142-user-authentication`
+
+This is what a developer creates for every unit of work. The ticket ID (`PROJ-142`) comes from the sprint planning system (JIRA, Linear, GitHub Issues). The description is kebab-case, lowercase, concise - enough to understand the branch purpose without reading the ticket. The developer cuts this from the latest `develop`, does all their work here, opens a PR targeting `develop`, gets at least one approval, and squash-merges. The branch is deleted the moment the PR merges.
+
+```
+git checkout develop
+git pull origin develop
+git checkout -b feature/PROJ-142-user-authentication
+# ... work, commit, push ...
+git push -u origin feature/PROJ-142-user-authentication
+# open PR: feature/PROJ-142-user-authentication -> develop
+```
+
+> [!TIP]
+> Many teams configure their git client to automatically name branches from ticket IDs. In JIRA, clicking "Create branch" pre-populates the name as `feature/PROJ-142-user-authentication`. In GitHub Issues, the "Create a branch" button does the same. Use these integrations - they eliminate naming inconsistencies and automatically link commits to issues.
+
+#### Testing / QA Branch - `test/PROJ-sprint-22-auth-integration-tests`
+
+This is what a QA engineer or developer creates when authoring or updating test suites independently of feature work. It follows the same creation, review, and merge pattern as a feature branch. Some teams use a dedicated long-lived `qa` branch that mirrors `develop` and is auto-deployed to a QA environment - individual test branches merge into `qa` rather than `develop` directly. Other teams skip the separate `qa` branch and merge test branches directly into `develop`. Either pattern works - the key is consistency.
+
+```
+git checkout develop
+git pull origin develop  
+git checkout -b test/PROJ-sprint-22-auth-integration-tests
+# ... write tests, commit ...
+git push -u origin test/PROJ-sprint-22-auth-integration-tests
+# open PR: test/PROJ-sprint-22-* -> develop
+```
+
+#### Development Integration Branch - `develop`
+
+This is the shared integration rail. It contains everything that is done but not yet shipped. It should be deployable to a development or staging environment at all times. CI runs on every push to `develop`. If `develop` is red (failing CI), fixing it is the highest priority for the entire team - a broken integration branch blocks everyone. The `develop` branch is never deleted and is never rebased - only merged into.
+
+> [!WARNING]
+> Never rebase the `develop` branch. Rebasing a shared branch rewrites the commit hashes that every developer has already pulled. Anyone with a local copy of `develop` will have a diverged history that is extremely painful to reconcile across the entire team. `develop` only ever moves forward via merge commits.
+
+#### Release Hardening Branch - `release/1.1.0`
+
+This is the final gate before production. When a sprint completes and `develop` is stable, a release branch is cut from `develop`. From this point, `develop` can continue accepting feature work for the next sprint while the release branch is frozen for hardening. Only bug fixes (as `bugfix/` branches merging into the release branch) are allowed on a release branch. No new features. The release branch is deployed to a staging environment for final acceptance testing, performance testing, and security review.
+
+Once the release is signed off, the release branch merges into `main` (which triggers the production deployment) AND back-merges into `develop` (to carry forward any last-minute fixes). This double-merge is critical - skipping the back-merge into `develop` is how fixes get lost between releases.
+
+```
+git checkout develop
+git pull origin develop
+git checkout -b release/1.1.0
+# ... only bugfixes from here ...
+# When ready:
+# PR: release/1.1.0 -> main   (production ship)
+# PR: release/1.1.0 -> develop  (carry fixes forward)
+```
+
+#### Emergency Production Patch - `hotfix/PROJ-175-null-deref-crash`
+
+This is the only branch type that is cut directly from `main`. It is used when a critical bug is found in production that cannot wait for the next release cycle. The developer checks out `main`, creates the hotfix branch, makes the minimal targeted fix, gets expedited review (often two approvals required even for small changes because of the production impact), and merges into `main` for immediate deployment. The hotfix is then also merged into `develop` and into any active release branch so the fix propagates everywhere.
+
+```
+git checkout main
+git pull origin main
+git checkout -b hotfix/PROJ-175-null-deref-crash-on-empty-token
+# ... fix, test, commit ...
+git push -u origin hotfix/PROJ-175-null-deref-crash-on-empty-token
+# PR: hotfix/... -> main   (emergency production fix)
+# PR: hotfix/... -> develop  (prevent regression in next release)
+```
+
+> [!WARNING]
+> A hotfix that merges to `main` but is NOT back-merged into `develop` will be overwritten by the next regular release. This is one of the most common and damaging Git mistakes in production systems. Always create BOTH PRs - one to `main` and one to `develop` - when shipping a hotfix.
+
+### Merge Direction Rules Summary
+
+```mermaid
+flowchart TD
+    FEAT["feature/PROJ-142-*\nDeveloper daily work"] -->|"PR + squash merge"| DEV["develop\nIntegration rail"]
+    BUG["bugfix/PROJ-163-*\nNon-critical bug fix"] -->|"PR + squash merge"| DEV
+    TEST["test/sprint-22-*\nQA and test suites"] -->|"PR + squash merge"| DEV
+    DEV -->|"Cut when sprint complete"| REL["release/1.1.0\nHardening only"]
+    REL_BUG["bugfix/PROJ-171-*\nRelease bug fix"] -->|"PR + squash merge"| REL
+    REL -->|"PR after sign-off"| MAIN["main\nProduction"]
+    REL -->|"Back-merge"| DEV
+    MAIN -->|"Cut for emergency"| HOT["hotfix/PROJ-175-*\nEmergency patch"]
+    HOT -->|"PR immediate"| MAIN
+    HOT -->|"Back-merge"| DEV
+    style MAIN fill:#1a3a1a,stroke:#2ea043,color:#fff
+    style DEV fill:#1a2a3a,stroke:#4a9eff,color:#fff
+    style REL fill:#3a2a1a,stroke:#f0a030,color:#fff
+    style HOT fill:#3a1a1a,stroke:#ff4a4a,color:#fff
+```
+
+> The arrows show the **only permitted merge directions**. Feature, bugfix, and test branches all converge on `develop`. Release branches fan out from `develop` and merge into both `main` and back into `develop`. Hotfix branches fan out from `main` and merge into both `main` and `develop`. There are no shortcuts.
+
+### Branch Protection Rules (What GitHub Enforces)
+
+In a real corporate repository, the branch hierarchy is enforced by branch protection rules configured at the repository level. GitSim simulates the workflow you would follow under these rules. The table below shows typical protection settings for each long-lived branch tier.
+
+| # | Branch | Require PR | Min Approvals | Require CI Pass | Allow Direct Push | Allow Force Push | Delete on Merge |
+|---|--------|-----------|--------------|----------------|------------------|-----------------|----------------|
+| <sub>1</sub> | <sub>`main`</sub> | <sub>Yes - required</sub> | <sub>2</sub> | <sub>Yes - all checks</sub> | <sub>No</sub> | <sub>No</sub> | <sub>n/a - permanent</sub> |
+| <sub>2</sub> | <sub>`develop`</sub> | <sub>Yes - required</sub> | <sub>1</sub> | <sub>Yes - unit tests</sub> | <sub>No</sub> | <sub>No</sub> | <sub>n/a - permanent</sub> |
+| <sub>3</sub> | <sub>`release/*`</sub> | <sub>Yes - required</sub> | <sub>2</sub> | <sub>Yes - full suite</sub> | <sub>No</sub> | <sub>No</sub> | <sub>After double-merge</sub> |
+| <sub>4</sub> | <sub>`feature/*`</sub> | <sub>Recommended</sub> | <sub>1</sub> | <sub>Yes - unit tests</sub> | <sub>No (by policy)</sub> | <sub>Only author (own branch)</sub> | <sub>Yes - auto on merge</sub> |
+| <sub>5</sub> | <sub>`bugfix/*`</sub> | <sub>Yes - required</sub> | <sub>1</sub> | <sub>Yes - unit tests</sub> | <sub>No (by policy)</sub> | <sub>Only author (own branch)</sub> | <sub>Yes - auto on merge</sub> |
+| <sub>6</sub> | <sub>`hotfix/*`</sub> | <sub>Yes - URGENT flag</sub> | <sub>2</sub> | <sub>Yes - all checks</sub> | <sub>No</sub> | <sub>No</sub> | <sub>Yes - after both merges</sub> |
 
 ---
 
@@ -408,8 +580,7 @@ Each module has a distinct, non-overlapping responsibility. This separation of c
 | <sub>6</sub> | <sub>`scenarios/feature_branch.py`</sub> | <sub>Scenario 1 - full feature lifecycle from branch creation through squash-merged PR.</sub> | <sub>`run(repo)`</sub> |
 | <sub>7</sub> | <sub>`scenarios/merge_conflict.py`</sub> | <sub>Scenario 2 - intentional conflict creation, visual marker rendering, manual resolution.</sub> | <sub>`run(repo)`</sub> |
 | <sub>8</sub> | <sub>`scenarios/rebase_example.py`</sub> | <sub>Scenario 3 - standard rebase, interactive squash, force-push demonstration.</sub> | <sub>`run(repo)`</sub> |
-| <sub>9</sub> | <sub>`scenarios/bad_practice.py`</sub> | <sub>Scenario 4 - anti-patterns with explicit warnings and correct alternatives shown inline.</sub> | <sub>`run(repo)`</sub> |
-
+| <sub>9</sub> | <sub>`scenarios/bad_practice.py`</sub> | <sub>Scenario 4 - anti-patterns with explicit warnings and correct alternatives shown inline.</sub> | <sub>`run(repo)`</sub> || <sub>10</sub> | <sub>`scenarios/branching_strategy.py`</sub> | <sub>Scenario 5 script - full corporate branch hierarchy: `main`, `develop`, `release/x.y.z`, `feature/PROJ-*`, `bugfix/PROJ-*`, `test/sprint-*`, `hotfix/PROJ-*` with ticket-ID naming and correct merge targets.</sub> | <sub>`run(repo)`</sub> |
 ---
 
 ## Data Structures
@@ -653,7 +824,8 @@ gitsim/
         ├── feature_branch.py      <- Scenario 1: full feature lifecycle
         ├── merge_conflict.py      <- Scenario 2: conflict creation and resolution
         ├── rebase_example.py      <- Scenario 3: standard + interactive rebase
-        └── bad_practice.py        <- Scenario 4: anti-patterns with consequences
+        ├── bad_practice.py        <- Scenario 4: anti-patterns with consequences
+        └── branching_strategy.py  <- Scenario 5: corporate branch hierarchy
 ```
 
 ---
@@ -776,6 +948,17 @@ python run.py -s 2             # Short flag, scenario 2
 **Error handling:** Each scenario is wrapped in a `try/except`. If a scenario raises an unhandled exception, the error is printed with the scenario number and the exception is re-raised so the exit code is non-zero. This allows CI pipelines to detect failures.
 
 **Fresh repo per scenario:** `GitRepo("GalacticWeather", author="Dev")` is instantiated inside the loop for each selected scenario. This guarantees zero state leakage between scenarios, making each one fully self-contained and independently runnable.
+
+```python
+# Scenario map in run.py
+scenarios = {
+    1: ("Feature Branch Workflow",        feature_branch.run),
+    2: ("Merge Conflict Resolution",      merge_conflict.run),
+    3: ("Rebasing",                        rebase_example.run),
+    4: ("Bad Practices",                   bad_practice.run),
+    5: ("Corporate Branching Strategy",    branching_strategy.run),
+}
+```
 
 </details>
 
